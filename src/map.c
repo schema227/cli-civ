@@ -126,6 +126,17 @@ int map_is_land_passable(const Map *map, int x, int y)
     return tile->type == TILE_PLAINS || tile->type == TILE_FOREST || tile->type == TILE_HILL;
 }
 
+int tile_can_host_city(TileType type)
+{
+    return type == TILE_PLAINS || type == TILE_FOREST || type == TILE_HILL;
+}
+
+int map_tile_can_host_city(const Map *map, int x, int y)
+{
+    const Tile *tile = map_get_tile_const(map, x, y);
+    return tile != NULL && tile_can_host_city(tile->type);
+}
+
 int building_get_cost(TileBuilding building)
 {
     switch (building) {

@@ -14,21 +14,38 @@ typedef struct {
     int height;
 } MapSize;
 
-static unsigned int parse_seed_or_default(int argc, char **argv)
+typedef struct {
+    unsigned int seed;
+    int use_color;
+} StartupOptions;
+
+static StartupOptions parse_startup_options(int argc, char **argv)
 {
-    if (argc < 2) {
-        return (unsigned int)time(NULL);
+    StartupOptions options = {(unsigned int)time(NULL), 1};
+    int seed_set = 0;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--no-color") == 0) {
+            options.use_color = 0;
+        } else if (strcmp(argv[i], "--color") == 0) {
+            options.use_color = 1;
+        } else if (!seed_set) {
+            errno = 0;
+            char *end = NULL;
+            unsigned long parsed = strtoul(argv[i], &end, 10);
+            if (errno != 0 || end == argv[i] || *end != '\0' || parsed > UINT_MAX) {
+                fprintf(stderr, "Unknown argument '%s'. Use an unsigned seed, --color, or --no-color.\n", argv[i]);
+                exit(EXIT_FAILURE);
+            }
+            options.seed = (unsigned int)parsed;
+            seed_set = 1;
+        } else {
+            fprintf(stderr, "Unknown argument '%s'. Use one seed plus optional --color or --no-color.\n", argv[i]);
+            exit(EXIT_FAILURE);
+        }
     }
 
-    errno = 0;
-    char *end = NULL;
-    unsigned long parsed = strtoul(argv[1], &end, 10);
-    if (errno != 0 || end == argv[1] || *end != '\0' || parsed > UINT_MAX) {
-        fprintf(stderr, "Invalid seed '%s'. Use an unsigned integer.\n", argv[1]);
-        exit(EXIT_FAILURE);
-    }
-
-    return (unsigned int)parsed;
+    return options;
 }
 
 static void trim_newline(char *text)
@@ -128,18 +145,48 @@ static void prompt_civilization_names(Game *game)
     }
 }
 
+static void assign_civilization_colors(Game *game)
+{
+    CivColor colors[] = {
+        CIV_COLOR_RED,
+        CIV_COLOR_YELLOW,
+        CIV_COLOR_BLUE,
+        CIV_COLOR_GREEN
+    };
+    int color_count = (int)(sizeof(colors) / sizeof(colors[0]));
+
+    for (int i = color_count - 1; i > 0; i--) {
+        int j = rand() % (i + 1);
+        CivColor temp = colors[i];
+        colors[i] = colors[j];
+        colors[j] = temp;
+    }
+
+    for (int i = 0; i < PLAYER_COUNT; i++) {
+        game->players[i].color = colors[i % color_count];
+        printf("%s assigned color: %s\n",
+            game->players[i].name,
+            civ_color_to_string(game->players[i].color));
+    }
+}
+
 int main(int argc, char **argv)
 {
     Game game;
-    unsigned int seed = parse_seed_or_default(argc, argv);
+    StartupOptions options = parse_startup_options(argc, argv);
     MapSize map_size = prompt_map_size();
+    RenderConfig render_config = {options.use_color};
 
-    if (!game_init(&game, seed, map_size.width, map_size.height)) {
+    if (!game_init(&game, options.seed, map_size.width, map_size.height)) {
         fprintf(stderr, "Failed to initialize game map.\n");
         return EXIT_FAILURE;
     }
     prompt_civilization_names(&game);
-    render_console_run(&game);
+    assign_civilization_colors(&game);
+    render_console_run(&game, render_config);
+    if (render_config.use_color) {
+        printf("\x1b[0m");
+    }
     game_free(&game);
 
     return 0;

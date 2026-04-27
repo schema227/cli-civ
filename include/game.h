@@ -10,6 +10,7 @@
 #define MAX_CITIES 64
 #define MAX_TURN_MESSAGES 16
 #define TURN_MESSAGE_LENGTH 96
+#define CITY_NAME_POOL_SIZE 100
 
 typedef struct {
     Map map;
@@ -26,6 +27,8 @@ typedef struct {
     int winner_player_id;
     int last_points_gained;
     int last_science_gained;
+    int used_city_names[CITY_NAME_POOL_SIZE];
+    int generated_city_name_count;
     int turn_message_count;
     char turn_messages[MAX_TURN_MESSAGES][TURN_MESSAGE_LENGTH];
 } Game;

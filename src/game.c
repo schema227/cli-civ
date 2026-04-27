@@ -10,6 +10,29 @@ typedef struct {
     int y;
 } Point;
 
+static const char *ROMANIAN_CITY_NAMES[CITY_NAME_POOL_SIZE] = {
+    "Bucuresti", "Cluj-Napoca", "Timisoara", "Iasi", "Constanta",
+    "Craiova", "Brasov", "Galati", "Ploiesti", "Oradea",
+    "Braila", "Arad", "Pitesti", "Sibiu", "Bacau",
+    "Targu Mures", "Baia Mare", "Buzau", "Botosani", "Satu Mare",
+    "Ramnicu Valcea", "Drobeta-Turnu Severin", "Suceava", "Piatra Neamt", "Targoviste",
+    "Focsani", "Bistrita", "Tulcea", "Resita", "Slatina",
+    "Calarasi", "Alba Iulia", "Giurgiu", "Deva", "Hunedoara",
+    "Zalau", "Sfantu Gheorghe", "Vaslui", "Roman", "Turda",
+    "Medias", "Slobozia", "Alexandria", "Voluntari", "Lugoj",
+    "Medgidia", "Onesti", "Miercurea Ciuc", "Sighetu Marmatiei", "Petrosani",
+    "Mangalia", "Tecuci", "Odorheiu Secuiesc", "Pascani", "Dej",
+    "Reghin", "Navodari", "Campina", "Campulung", "Caracal",
+    "Fagaras", "Falticeni", "Radauti", "Sighisoara", "Rosiori de Vede",
+    "Oltenita", "Turnu Magurele", "Codlea", "Moinesti", "Ramnicu Sarat",
+    "Gherla", "Targu Secuiesc", "Curtea de Arges", "Aiud", "Sebes",
+    "Bailesti", "Carei", "Cugir", "Orastie", "Blaj",
+    "Comanesti", "Motru", "Targu Neamt", "Dorohoi", "Vatra Dornei",
+    "Vulcan", "Lupeni", "Zarnesti", "Gaesti", "Mizil",
+    "Toplita", "Moreni", "Titu", "Corabia", "Buhusi",
+    "Tarnaveni", "Ineu", "Husi", "Salonta", "Beius"
+};
+
 Player *game_current_player(Game *game)
 {
     return &game->players[game->current_player_index];
@@ -42,6 +65,57 @@ static int distance_manhattan(int ax, int ay, int bx, int by)
     return dx + dy;
 }
 
+static void city_name_mark_used(Game *game, const char *name)
+{
+    if (game == NULL || name == NULL) {
+        return;
+    }
+
+    for (int i = 0; i < CITY_NAME_POOL_SIZE; i++) {
+        if (strcmp(name, ROMANIAN_CITY_NAMES[i]) == 0) {
+            game->used_city_names[i] = 1;
+            return;
+        }
+    }
+}
+
+static void city_name_generate_random(Game *game, char *buffer, size_t buffer_size)
+{
+    int unused_count = 0;
+    int choice;
+
+    if (buffer == NULL || buffer_size == 0) {
+        return;
+    }
+
+    for (int i = 0; i < CITY_NAME_POOL_SIZE; i++) {
+        if (!game->used_city_names[i]) {
+            unused_count++;
+        }
+    }
+
+    if (unused_count <= 0) {
+        game->generated_city_name_count++;
+        snprintf(buffer, buffer_size, "City%d", CITY_NAME_POOL_SIZE + game->generated_city_name_count);
+        return;
+    }
+
+    choice = rand() % unused_count;
+    for (int i = 0; i < CITY_NAME_POOL_SIZE; i++) {
+        if (game->used_city_names[i]) {
+            continue;
+        }
+        if (choice == 0) {
+            snprintf(buffer, buffer_size, "%s", ROMANIAN_CITY_NAMES[i]);
+            game->used_city_names[i] = 1;
+            return;
+        }
+        choice--;
+    }
+
+    snprintf(buffer, buffer_size, "City%d", game->city_count + 1);
+}
+
 static City *add_city(Game *game, int owner_id, int x, int y, const char *name)
 {
     City *city;
@@ -49,12 +123,13 @@ static City *add_city(Game *game, int owner_id, int x, int y, const char *name)
     if (game->city_count >= MAX_CITIES) {
         return NULL;
     }
-    if (!map_in_bounds(&game->map, x, y)) {
+    if (!map_tile_can_host_city(&game->map, x, y)) {
         return NULL;
     }
 
     city = &game->cities[game->city_count];
     city_init(city, owner_id, x, y, name);
+    city_name_mark_used(game, city->name);
     game->city_count++;
 
     if (owner_id >= 1 && owner_id <= PLAYER_COUNT && game_count_cities_for_player(game, owner_id) == 1) {
@@ -100,7 +175,7 @@ static int find_start_city(const Map *map, const Point *avoid, Point *out)
         int x = margin + rand() % (map->width - margin * 2);
         int y = margin + rand() % (map->height - margin * 2);
 
-        if (!map_is_land_passable(map, x, y)) {
+        if (!map_tile_can_host_city(map, x, y)) {
             continue;
         }
 
@@ -215,15 +290,21 @@ static int place_starting_assets(Game *game)
         ensure_start_patch(&game->map, &city_b);
     }
 
-    if (!map_is_land_passable(&game->map, city_a.x, city_a.y)
-        || !map_is_land_passable(&game->map, city_b.x, city_b.y)
+    if (!map_tile_can_host_city(&game->map, city_a.x, city_a.y)
+        || !map_tile_can_host_city(&game->map, city_b.x, city_b.y)
         || !map_is_land_passable(&game->map, unit_a.x, unit_a.y)
         || !map_is_land_passable(&game->map, unit_b.x, unit_b.y)) {
         return 0;
     }
 
-    if (add_city(game, 1, city_a.x, city_a.y, "Capital") == NULL
-        || add_city(game, 2, city_b.x, city_b.y, "Keep") == NULL) {
+    char city_a_name[CITY_NAME_LENGTH];
+    char city_b_name[CITY_NAME_LENGTH];
+
+    city_name_generate_random(game, city_a_name, sizeof(city_a_name));
+    city_name_generate_random(game, city_b_name, sizeof(city_b_name));
+
+    if (add_city(game, 1, city_a.x, city_a.y, city_a_name) == NULL
+        || add_city(game, 2, city_b.x, city_b.y, city_b_name) == NULL) {
         return 0;
     }
     (void)game_spawn_unit(game, UNIT_WARRIOR, unit_a.x, unit_a.y, NULL);
@@ -272,6 +353,10 @@ int game_init(Game *game, unsigned int seed, int map_width, int map_height)
     game->winner_player_id = 0;
     game->last_points_gained = 0;
     game->last_science_gained = 0;
+    game->generated_city_name_count = 0;
+    for (int i = 0; i < CITY_NAME_POOL_SIZE; i++) {
+        game->used_city_names[i] = 0;
+    }
     game->turn_message_count = 0;
 
     if (!map_init(&game->map, map_width, map_height, TILE_WATER)) {
@@ -286,6 +371,10 @@ int game_init(Game *game, unsigned int seed, int map_width, int map_height)
         game->city_count = 0;
         game->selected_unit = NULL;
         game->current_player_index = 0;
+        game->generated_city_name_count = 0;
+        for (int i = 0; i < CITY_NAME_POOL_SIZE; i++) {
+            game->used_city_names[i] = 0;
+        }
         map_generate_archipelago(&game->map);
         if (place_starting_assets(game)) {
             return 1;
@@ -296,6 +385,10 @@ int game_init(Game *game, unsigned int seed, int map_width, int map_height)
     game->city_count = 0;
     game->selected_unit = NULL;
     game->current_player_index = 0;
+    game->generated_city_name_count = 0;
+    for (int i = 0; i < CITY_NAME_POOL_SIZE; i++) {
+        game->used_city_names[i] = 0;
+    }
     for (int y = 0; y < game->map.height; y++) {
         for (int x = 0; x < game->map.width; x++) {
             map_set_tile(&game->map, x, y, TILE_WATER);
@@ -1279,7 +1372,7 @@ GameActionResult game_found_city(Game *game, const char *name, City **created_ci
     if (tile == NULL) {
         return GAME_ACTION_INVALID_INPUT;
     }
-    if (tile->type != TILE_PLAINS && tile->type != TILE_HILL) {
+    if (!tile_can_host_city(tile->type)) {
         return GAME_ACTION_WRONG_TERRAIN;
     }
     if (get_city_at(game, settler->x, settler->y) != NULL) {
@@ -1293,7 +1386,7 @@ GameActionResult game_found_city(Game *game, const char *name, City **created_ci
     }
 
     if (city_name_is_blank(name)) {
-        snprintf(generated_name, sizeof(generated_name), "City%d", game->city_count + 1);
+        city_name_generate_random(game, generated_name, sizeof(generated_name));
         name = generated_name;
     }
 

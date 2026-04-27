@@ -22,6 +22,14 @@ Or run the binary directly:
 ./civ_console
 ```
 
+Color rendering is enabled by default. Use ANSI-color flags as needed:
+
+```sh
+./civ_console --no-color
+./civ_console --color
+./civ_console 12345 --no-color
+```
+
 On startup, the game asks for a map size:
 
 ```text
@@ -32,7 +40,7 @@ Choose map size:
 4. xlarge - 96x96
 ```
 
-Enter either the number or the word, such as `1` or `small`. Press Enter without typing anything to use the default: `large`, which is 64x64. The game then asks for civilization names; blank names fall back to `Player 1` and `Player 2`.
+Enter either the number or the word, such as `1` or `small`. Press Enter without typing anything to use the default: `large`, which is 64x64. The game then asks for civilization names; blank names fall back to `Player 1` and `Player 2`. Each civilization is assigned a unique random color from red, yellow, blue, and green.
 
 ## Seeded Worlds
 
@@ -51,8 +59,21 @@ If no seed is provided, the game uses `time(NULL)`. The selected seed is printed
 - `status` - show current player, points, science, research, units, and selection
 - `economy` - show points, science, income, owned cities, science buildings, and border growth
 - `tech` - show unlocked, available, and locked technologies
+- `researchable` - show only techs currently available to research
+- `available` - show useful actions available this turn
+- `available city_x city_y` - show available actions for one owned city
+- `todo`, `actions`, or `advice` - show a short checklist for the current turn
+- `buildoptions x y` - show train/build/upgrade options for an owned city
 - `research tech_name` - choose the current technology to research
 - `buildscience type city_x city_y` - build an internal city science building
+- `list`, `units`, or `selectable` - list selectable current-player units and coordinates
+- `cities` or `citylist` - list all cities with owner, coordinates, income, walls, and siege status
+- `mycities` - list only the current player's cities
+- `where` - show the selected unit details
+- `inspect x y` - inspect a tile, city, unit, controller, building, and defensive bonus
+- `moves` - list legal one-step moves for the selected unit
+- `enemies` - list all visible enemy units
+- `attacks` - list enemy units in attack range and adjacent siege targets
 - `select x y` - select the current player's unit at a coordinate
 - `move north` - move selected unit one tile north
 - `move south` - move selected unit one tile south
@@ -68,11 +89,56 @@ If no seed is provided, the game uses `time(NULL)`. The selected seed is printed
 - `end` - end the current player's turn
 - `quit` - exit cleanly
 
+Aliases:
+
+- `h` = `help`
+- `m` = `map`
+- `s` = `status`
+- `e` = `end`
+- `q` = `quit`
+- `eco` = `economy`
+- `techs` = `tech`
+
+## Console Rendering
+
+By default, ownership is shown with ANSI colors:
+
+- Bright colored units and cities belong to that civilization.
+- Colored background shows city borders.
+- Dim colored building symbols show tile buildings.
+- Free cities render as neutral `F`.
+
+Unit and city letters are unified in color mode. For example, a Warrior is always `W` and an owned city is always `C`; color identifies the owner. In `--no-color` mode, the map remains readable and keeps fallback ownership hints such as player-specific casing where available.
+
+## Turn Guidance
+
+Each active turn starts with a compact summary showing points gained, science gained, research progress, owned cities, cities under siege, living units, ready units, attack-ready units, and short warnings. Warnings include missing research, cities under siege, available science buildings, available walls, and trainable units.
+
+When ending a turn, the game prints a short unresolved-actions summary and then passes to the next civilization without asking for confirmation.
+
+Use `available` to see current research, city actions, and unit actions. Use `available x y` or `buildoptions x y` on one of your cities to focus on trainable units, walls, science buildings, and tile building opportunities. Use `todo`, `actions`, or `advice` for a brief checklist.
+
 ## Conquest
 
 Conquest is the only mode. A civilization is eliminated when its capital is captured. Eliminated civilizations lose their remaining units, their non-capital cities become free cities, and their turns are skipped. The game ends when one civilization remains, then prints a leaderboard.
 
 City capture uses a simple siege rule: if a unit ends its turn on an enemy or free city tile, the city is under siege. The defender gets one turn to respond. If the sieging unit is still alive on the city tile when the attacker’s next turn begins, the city is captured.
+
+Cities can only exist on plains, forests, or hills. Starting capitals and settler-founded cities are validated so they do not appear on water, mountains, or inaccessible terrain.
+
+Starting capitals receive random Romanian city names from a built-in list. If a settler founds a city with no name, the game chooses an unused Romanian city name when possible:
+
+```text
+found
+```
+
+Custom city names still work and preserve the rest of the command line:
+
+```text
+found Alba Iulia
+```
+
+Captured cities and cities that become free keep their existing names.
 
 ## Economy
 
@@ -165,13 +231,13 @@ Settlers:
 - Render as `L` for Player 1 and `l` for Player 2
 - Cannot attack
 - Move on plains, forests, and hills
-- Can found cities with `found city_name`
+- Can found cities with `found city_name`, or use `found` to generate a Romanian city name
 - Are consumed when founding succeeds
 
 Founding rules:
 
 - The selected unit must be a living settler.
-- The settler must stand on plains or hills.
+- The settler must stand on plains, forest, or hills.
 - The tile cannot already contain a city.
 - The new city must be at least 4 Manhattan tiles away from every existing city.
 

@@ -6,10 +6,19 @@
 
 #define PLAYER_NAME_LENGTH 32
 
+typedef enum {
+    CIV_COLOR_RED,
+    CIV_COLOR_YELLOW,
+    CIV_COLOR_BLUE,
+    CIV_COLOR_GREEN,
+    CIV_COLOR_NONE
+} CivColor;
+
 typedef struct {
     int id;
     char name[PLAYER_NAME_LENGTH];
     char symbol;
+    CivColor color;
     int points;
     int science;
     int science_generated_total;
@@ -36,5 +45,10 @@ typedef struct {
 } Player;
 
 void player_init(Player *player, int id, const char *name, char symbol);
+const char *civ_color_to_string(CivColor color);
+const char *civ_color_to_ansi_fg(CivColor color);
+const char *civ_color_to_ansi_bg(CivColor color);
+const char *civ_color_to_ansi_light_bg(CivColor color);
+const char *civ_color_to_ansi_dark_bg(CivColor color);
 
 #endif
