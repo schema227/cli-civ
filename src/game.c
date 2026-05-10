@@ -43,13 +43,6 @@ const Player *game_current_player_const(const Game *game)
     return &game->players[game->current_player_index];
 }
 
-static int distance_squared(int ax, int ay, int bx, int by)
-{
-    int dx = ax - bx;
-    int dy = ay - by;
-    return dx * dx + dy * dy;
-}
-
 static int distance_manhattan(int ax, int ay, int bx, int by)
 {
     int dx = ax - bx;
@@ -132,7 +125,7 @@ static City *add_city(Game *game, int owner_id, int x, int y, const char *name)
     city_name_mark_used(game, city->name);
     game->city_count++;
 
-    if (owner_id >= 1 && owner_id <= PLAYER_COUNT && game_count_cities_for_player(game, owner_id) == 1) {
+    if (owner_id >= 1 && owner_id <= game->player_count && game_count_cities_for_player(game, owner_id) == 1) {
         city->is_capital = 1;
         game->players[owner_id - 1].starting_city = *city;
         game->players[owner_id - 1].capital_x = x;
@@ -146,8 +139,13 @@ int player_is_active(const Game *game, int player_id)
 {
     return game != NULL
         && player_id >= 1
-        && player_id <= PLAYER_COUNT
+        && player_id <= game->player_count
         && !game->players[player_id - 1].is_eliminated;
+}
+
+int game_is_debug_mode(const Game *game)
+{
+    return game != NULL && game->mode == GAME_MODE_DEBUG;
 }
 
 const char *get_player_name_safe(const Game *game, int player_id)
@@ -155,13 +153,42 @@ const char *get_player_name_safe(const Game *game, int player_id)
     if (game == NULL || player_id == OWNER_FREE) {
         return "Free Cities";
     }
-    if (player_id < 1 || player_id > PLAYER_COUNT) {
+    if (player_id < 1 || player_id > game->player_count) {
         return "Unknown";
     }
     return game->players[player_id - 1].name;
 }
 
-static int find_start_city(const Map *map, const Point *avoid, Point *out)
+static int point_matches_any(const Point points[], int count, int x, int y)
+{
+    for (int i = 0; i < count; i++) {
+        if (points[i].x == x && points[i].y == y) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int point_distance_to_nearest(const Point points[], int count, int x, int y)
+{
+    int nearest = 1000000;
+
+    if (count <= 0) {
+        return nearest;
+    }
+
+    for (int i = 0; i < count; i++) {
+        int distance = distance_manhattan(x, y, points[i].x, points[i].y);
+        if (distance < nearest) {
+            nearest = distance;
+        }
+    }
+
+    return nearest;
+}
+
+static int find_start_city(const Map *map, const Point existing[], int existing_count, int min_distance, Point *out)
 {
     int best_score = -1;
     Point best = {0, 0};
@@ -175,15 +202,17 @@ static int find_start_city(const Map *map, const Point *avoid, Point *out)
         int x = margin + rand() % (map->width - margin * 2);
         int y = margin + rand() % (map->height - margin * 2);
 
-        if (!map_tile_can_host_city(map, x, y)) {
+        if (!map_tile_can_host_city(map, x, y) || point_matches_any(existing, existing_count, x, y)) {
             continue;
         }
 
-        int score = 1;
-        if (avoid != NULL) {
-            score = distance_squared(x, y, avoid->x, avoid->y);
-        }
+        int score = point_distance_to_nearest(existing, existing_count, x, y);
 
+        if (existing_count == 0 || score >= min_distance) {
+            out->x = x;
+            out->y = y;
+            return 1;
+        }
         if (score > best_score) {
             best_score = score;
             best.x = x;
@@ -199,7 +228,7 @@ static int find_start_city(const Map *map, const Point *avoid, Point *out)
     return 1;
 }
 
-static int find_adjacent_unit_tile(const Map *map, const Point *city, Point *out)
+static int find_adjacent_unit_tile(const Map *map, const Point *city, const Point cities[], int city_count, const Point units[], int unit_count, Point *out)
 {
     static const Point directions[] = {
         {0, -1},
@@ -215,7 +244,9 @@ static int find_adjacent_unit_tile(const Map *map, const Point *city, Point *out
     for (size_t i = 0; i < sizeof(directions) / sizeof(directions[0]); i++) {
         int x = city->x + directions[i].x;
         int y = city->y + directions[i].y;
-        if (map_is_land_passable(map, x, y)) {
+        if (map_is_land_passable(map, x, y)
+            && !point_matches_any(cities, city_count, x, y)
+            && !point_matches_any(units, unit_count, x, y)) {
             out->x = x;
             out->y = y;
             return 1;
@@ -234,86 +265,93 @@ static void ensure_start_patch(Map *map, const Point *point)
     map_set_tile(map, point->x, point->y - 1, TILE_PLAINS);
 }
 
-static void fallback_start_points(const Map *map, Point *city_a, Point *city_b)
+static Point fallback_start_point(const Map *map, int index)
 {
-    city_a->x = map->width / 4;
-    city_a->y = map->height / 4;
-    city_b->x = (map->width * 3) / 4;
-    city_b->y = (map->height * 3) / 4;
+    static const int fractions[][2] = {
+        {1, 4},
+        {3, 4},
+        {3, 4},
+        {1, 4},
+        {1, 2}
+    };
+    static const int y_fractions[][2] = {
+        {1, 4},
+        {3, 4},
+        {1, 4},
+        {3, 4},
+        {1, 2}
+    };
+    Point point;
 
-    if (city_a->x < 3) {
-        city_a->x = 3;
+    point.x = (map->width * fractions[index][0]) / fractions[index][1];
+    point.y = (map->height * y_fractions[index][0]) / y_fractions[index][1];
+    if (point.x < 3) {
+        point.x = 3;
     }
-    if (city_a->y < 3) {
-        city_a->y = 3;
+    if (point.y < 3) {
+        point.y = 3;
     }
-    if (city_b->x > map->width - 4) {
-        city_b->x = map->width - 4;
+    if (point.x > map->width - 4) {
+        point.x = map->width - 4;
     }
-    if (city_b->y > map->height - 4) {
-        city_b->y = map->height - 4;
+    if (point.y > map->height - 4) {
+        point.y = map->height - 4;
     }
+
+    return point;
 }
 
 static int place_starting_assets(Game *game)
 {
-    Point city_a;
-    Point city_b;
-    Point unit_a;
-    Point unit_b;
+    Point cities[MAX_PLAYERS];
+    Point units[MAX_PLAYERS];
     int min_dim = game->map.width < game->map.height ? game->map.width : game->map.height;
-    int min_distance_squared = (min_dim / 3) * (min_dim / 3);
-    int used_fallback = 0;
+    int min_distance = min_dim / (game->player_count <= 2 ? 3 : game->player_count);
 
-    if (!find_start_city(&game->map, NULL, &city_a)) {
-        fallback_start_points(&game->map, &city_a, &city_b);
-        ensure_start_patch(&game->map, &city_a);
-        ensure_start_patch(&game->map, &city_b);
-        used_fallback = 1;
+    if (min_distance < 5) {
+        min_distance = 5;
     }
 
-    if (!used_fallback
-        && (!find_start_city(&game->map, &city_a, &city_b)
-            || distance_squared(city_a.x, city_a.y, city_b.x, city_b.y) < min_distance_squared)) {
-        return 0;
+    for (int i = 0; i < game->player_count; i++) {
+        if (!find_start_city(&game->map, cities, i, min_distance, &cities[i])) {
+            cities[i] = fallback_start_point(&game->map, i);
+            ensure_start_patch(&game->map, &cities[i]);
+        }
     }
 
-    if (!find_adjacent_unit_tile(&game->map, &city_a, &unit_a)) {
-        unit_a.x = city_a.x + 1;
-        unit_a.y = city_a.y;
-        ensure_start_patch(&game->map, &city_a);
+    for (int i = 0; i < game->player_count; i++) {
+        if (!find_adjacent_unit_tile(&game->map, &cities[i], cities, game->player_count, units, i, &units[i])) {
+            ensure_start_patch(&game->map, &cities[i]);
+            if (!find_adjacent_unit_tile(&game->map, &cities[i], cities, game->player_count, units, i, &units[i])) {
+                return 0;
+            }
+        }
     }
 
-    if (!find_adjacent_unit_tile(&game->map, &city_b, &unit_b)) {
-        unit_b.x = city_b.x - 1;
-        unit_b.y = city_b.y;
-        ensure_start_patch(&game->map, &city_b);
+    for (int i = 0; i < game->player_count; i++) {
+        char city_name[CITY_NAME_LENGTH];
+
+        if (!map_tile_can_host_city(&game->map, cities[i].x, cities[i].y)
+            || !map_is_land_passable(&game->map, units[i].x, units[i].y)
+            || point_matches_any(cities, i, cities[i].x, cities[i].y)
+            || point_matches_any(units, i, units[i].x, units[i].y)
+            || point_matches_any(cities, game->player_count, units[i].x, units[i].y)) {
+            return 0;
+        }
+
+        city_name_generate_random(game, city_name, sizeof(city_name));
+        if (add_city(game, i + 1, cities[i].x, cities[i].y, city_name) == NULL) {
+            return 0;
+        }
+
+        game->current_player_index = i;
+        if (game_spawn_unit(game, UNIT_WARRIOR, units[i].x, units[i].y, NULL) != GAME_ACTION_OK) {
+            return 0;
+        }
     }
 
-    if (!map_tile_can_host_city(&game->map, city_a.x, city_a.y)
-        || !map_tile_can_host_city(&game->map, city_b.x, city_b.y)
-        || !map_is_land_passable(&game->map, unit_a.x, unit_a.y)
-        || !map_is_land_passable(&game->map, unit_b.x, unit_b.y)) {
-        return 0;
-    }
-
-    char city_a_name[CITY_NAME_LENGTH];
-    char city_b_name[CITY_NAME_LENGTH];
-
-    city_name_generate_random(game, city_a_name, sizeof(city_a_name));
-    city_name_generate_random(game, city_b_name, sizeof(city_b_name));
-
-    if (add_city(game, 1, city_a.x, city_a.y, city_a_name) == NULL
-        || add_city(game, 2, city_b.x, city_b.y, city_b_name) == NULL) {
-        return 0;
-    }
-    (void)game_spawn_unit(game, UNIT_WARRIOR, unit_a.x, unit_a.y, NULL);
-
-    game->current_player_index = 1;
-    (void)game_spawn_unit(game, UNIT_WARRIOR, unit_b.x, unit_b.y, NULL);
     game->current_player_index = 0;
-
-    return game->unit_count == 2;
+    return game->unit_count == game->player_count;
 }
 
 static void direction_to_delta(GameDirection direction, int *dx, int *dy)
@@ -337,10 +375,16 @@ static void direction_to_delta(GameDirection direction, int *dx, int *dy)
     }
 }
 
-int game_init(Game *game, unsigned int seed, int map_width, int map_height)
+int game_init(Game *game, unsigned int seed, int map_width, int map_height, int player_count, GameMode mode)
 {
+    if (player_count < MIN_PLAYERS || player_count > MAX_PLAYERS) {
+        return 0;
+    }
+
     srand(seed);
     game->seed = seed;
+    game->player_count = player_count;
+    game->mode = mode;
     game->unit_count = 0;
     game->city_count = 0;
     game->current_player_index = 0;
@@ -363,8 +407,14 @@ int game_init(Game *game, unsigned int seed, int map_width, int map_height)
         return 0;
     }
 
-    player_init(&game->players[0], 1, "Player 1", '1');
-    player_init(&game->players[1], 2, "Player 2", '2');
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        char name[PLAYER_NAME_LENGTH];
+        snprintf(name, sizeof(name), "Player %d", i + 1);
+        player_init(&game->players[i], i + 1, name, (char)('1' + i));
+        if (i >= game->player_count) {
+            game->players[i].is_eliminated = 1;
+        }
+    }
 
     for (int attempt = 0; attempt < 20; attempt++) {
         game->unit_count = 0;
@@ -414,7 +464,7 @@ static int active_player_count(const Game *game)
 {
     int count = 0;
 
-    for (int i = 0; i < PLAYER_COUNT; i++) {
+    for (int i = 0; i < game->player_count; i++) {
         if (!game->players[i].is_eliminated) {
             count++;
         }
@@ -441,7 +491,7 @@ static void check_conquest_victory(Game *game)
         return;
     }
 
-    for (int i = 0; i < PLAYER_COUNT; i++) {
+    for (int i = 0; i < game->player_count; i++) {
         if (!game->players[i].is_eliminated) {
             winner_id = game->players[i].id;
         }
@@ -502,7 +552,7 @@ static void capture_city(Game *game, City *city, int capturing_player_id)
         return;
     }
 
-    if (old_owner >= 1 && old_owner <= PLAYER_COUNT) {
+    if (old_owner >= 1 && old_owner <= game->player_count) {
         game->players[old_owner - 1].cities_lost++;
     }
 
@@ -517,7 +567,7 @@ static void capture_city(Game *game, City *city, int capturing_player_id)
     add_turn_message(game, message);
 
     if (old_owner >= 1
-        && old_owner <= PLAYER_COUNT
+        && old_owner <= game->player_count
         && game->players[old_owner - 1].capital_x == city->x
         && game->players[old_owner - 1].capital_y == city->y) {
         eliminate_player(game, old_owner, capturing_player_id);
@@ -623,11 +673,11 @@ void game_end_turn(Game *game)
     }
 
     do {
-        game->current_player_index = (game->current_player_index + 1) % PLAYER_COUNT;
+        game->current_player_index = (game->current_player_index + 1) % game->player_count;
         checked++;
-    } while (checked <= PLAYER_COUNT && game_current_player(game)->is_eliminated);
+    } while (checked <= game->player_count && game_current_player(game)->is_eliminated);
 
-    if (checked > PLAYER_COUNT) {
+    if (checked > game->player_count) {
         check_conquest_victory(game);
         return;
     }
@@ -809,7 +859,13 @@ int game_count_cities_for_player(const Game *game, int owner_id)
 
 int city_get_income(const Game *game, const City *city)
 {
-    int income = city->base_points_per_turn;
+    int income;
+
+    if (game == NULL || city == NULL || city->owner_id < 1 || city->owner_id > game->player_count) {
+        return 0;
+    }
+
+    income = city->base_points_per_turn;
 
     for (int y = city->y - city->border_radius; y <= city->y + city->border_radius; y++) {
         for (int x = city->x - city->border_radius; x <= city->x + city->border_radius; x++) {
@@ -862,7 +918,7 @@ int city_get_science_slots(const Game *game, const City *city)
     slots = city->border_radius;
     if (city_has_valid_owner(city)
         && game != NULL
-        && city->owner_id <= PLAYER_COUNT
+        && city->owner_id <= game->player_count
         && player_has_tech(&game->players[city->owner_id - 1], TECH_ADMINISTRATION)) {
         slots++;
     }
@@ -878,8 +934,7 @@ int city_get_science_per_turn(const Game *game, const City *city)
 {
     int science = 1;
 
-    (void)game;
-    if (city == NULL || !city_has_valid_owner(city)) {
+    if (game == NULL || city == NULL || city->owner_id < 1 || city->owner_id > game->player_count) {
         return 0;
     }
 
@@ -894,7 +949,7 @@ int player_get_science_per_turn(const Game *game, int owner_id)
 {
     int science = 0;
 
-    if (game == NULL || owner_id < 1 || owner_id > PLAYER_COUNT || game->players[owner_id - 1].is_eliminated) {
+    if (game == NULL || owner_id < 1 || owner_id > game->player_count || game->players[owner_id - 1].is_eliminated) {
         return 0;
     }
 
@@ -1599,10 +1654,10 @@ CombatResult game_attack_selected_unit(Game *game, int x, int y)
     apply_damage(defender, result.damage);
     result.defender_destroyed = !defender->alive;
     if (result.defender_destroyed) {
-        if (defender->owner_id >= 1 && defender->owner_id <= PLAYER_COUNT) {
+        if (defender->owner_id >= 1 && defender->owner_id <= game->player_count) {
             game->players[defender->owner_id - 1].units_lost++;
         }
-        if (attacker->owner_id >= 1 && attacker->owner_id <= PLAYER_COUNT) {
+        if (attacker->owner_id >= 1 && attacker->owner_id <= game->player_count) {
             game->players[attacker->owner_id - 1].enemy_units_destroyed++;
         }
     }
@@ -1612,10 +1667,10 @@ CombatResult game_attack_selected_unit(Game *game, int x, int y)
         apply_damage(attacker, result.counter_damage);
         result.attacker_destroyed = !attacker->alive;
         if (result.attacker_destroyed) {
-            if (attacker->owner_id >= 1 && attacker->owner_id <= PLAYER_COUNT) {
+            if (attacker->owner_id >= 1 && attacker->owner_id <= game->player_count) {
                 game->players[attacker->owner_id - 1].units_lost++;
             }
-            if (defender->owner_id >= 1 && defender->owner_id <= PLAYER_COUNT) {
+            if (defender->owner_id >= 1 && defender->owner_id <= game->player_count) {
                 game->players[defender->owner_id - 1].enemy_units_destroyed++;
             }
         }
@@ -1647,7 +1702,7 @@ int player_calculate_score(const Player *player)
 
 void game_print_leaderboard(const Game *game)
 {
-    int printed[PLAYER_COUNT] = {0};
+    int printed[MAX_PLAYERS] = {0};
     int rank = 1;
 
     if (game->game_over) {
@@ -1658,10 +1713,10 @@ void game_print_leaderboard(const Game *game)
     }
     printf("Leaderboard:\n");
 
-    for (int pass = 0; pass < PLAYER_COUNT; pass++) {
+    for (int pass = 0; pass < game->player_count; pass++) {
         int best = -1;
 
-        for (int i = 0; i < PLAYER_COUNT; i++) {
+        for (int i = 0; i < game->player_count; i++) {
             const Player *player = &game->players[i];
             if (printed[i]) {
                 continue;

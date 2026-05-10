@@ -1,8 +1,30 @@
-# Console Civ
+# schema227's cli civilization
 
-A small C17 console strategy-game foundation inspired by Civilization and Battle of Polytopia.
+schema227's cli civilization is a C17 console hotseat strategy game inspired by Civilization and The Battle of Polytopia. It is a playable conquest prototype with separated game logic and console rendering, so a future renderer such as raylib can replace the console layer without rewriting the rules.
 
-This is v0.1 groundwork: map generation, two hotseat civilizations, conquest, city capture, borders, points economy, science, a non-linear technology tree, tile buildings, multiple unit types, simple combat, settlers, and console rendering. Game logic is kept separate from rendering so another renderer, such as raylib, can replace the console layer later.
+## Features
+
+- 2-5 human hotseat players
+- Standard mode for normal play and Debug mode for test commands
+- Dynamic map sizes: 32x32, 48x48, 64x64, and 96x96
+- Random archipelago world generation
+- Terrain: water, plains, forest, hill, mountain
+- Colored ANSI console rendering with `--no-color` fallback
+- Random Romanian city names, plus custom founded city names
+- City founding, borders, walls, sieges, capture, free cities, and conquest victory
+- Points economy, tile buildings, science, city science buildings, and a non-linear tech tree
+- Multiple land and naval unit types
+- Combat with terrain, city, and wall defense bonuses
+- Endgame leaderboard and player statistics
+
+## Requirements
+
+- GCC
+- Make
+- Linux, WSL, or a similar POSIX-style environment
+- No external libraries
+
+Windows users should use WSL or a terminal that supports ANSI escape codes. Use `--no-color` if color output is not readable.
 
 ## Build
 
@@ -10,263 +32,253 @@ This is v0.1 groundwork: map generation, two hotseat civilizations, conquest, ci
 make
 ```
 
-## Run
-
 ```sh
 make run
 ```
 
-Or run the binary directly:
+```sh
+make clean
+```
+
+## Running
 
 ```sh
 ./civ_console
-```
-
-Color rendering is enabled by default. Use ANSI-color flags as needed:
-
-```sh
+./civ_console 12345
 ./civ_console --no-color
-./civ_console --color
 ./civ_console 12345 --no-color
 ```
 
-On startup, the game asks for a map size:
+If no seed is provided, the game uses `time(NULL)`. The seed is printed at startup so a map can be replayed.
 
-```text
-Choose map size:
-1. small  - 32x32
-2. medium - 48x48
-3. large  - 64x64
-4. xlarge - 96x96
-```
+## Startup
 
-Enter either the number or the word, such as `1` or `small`. Press Enter without typing anything to use the default: `large`, which is 64x64. The game then asks for civilization names; blank names fall back to `Player 1` and `Player 2`. Each civilization is assigned a unique random color from red, yellow, blue, and green.
+The game asks for:
 
-## Seeded Worlds
+1. Map size: `small`, `medium`, `large`, or `xlarge`
+2. Game mode: `standard` or `debug`
+3. Number of human players: 2-5
+4. Civilization names
 
-Pass an unsigned integer seed to reproduce a map:
+Defaults:
 
-```sh
-./civ_console 12345
-```
+- Map size: `large` (64x64)
+- Game mode: `standard`
+- Players: 2
+- Blank civilization names become `Player 1`, `Player 2`, etc.
 
-If no seed is provided, the game uses `time(NULL)`. The selected seed is printed at startup.
+Each civilization is assigned a color from red, yellow, blue, and green. In 5-player games one color is reused; player names and numbers remain visible in text commands and legends.
+
+## Game Modes
+
+Standard mode is normal play. Debug and creative commands are hidden and disabled.
+
+Debug mode enables normal play plus test commands such as `spawn unit_type x y`. Debug mode is useful for testing combat, balance, sieges, and map situations.
+
+## How To Play
+
+Pick a research target, inspect the map, manage cities, train units, expand with settlers, and capture enemy capitals. A city is captured only if a unit remains on that city tile until the attacker’s next turn, giving the defender a chance to respond. Capturing a capital eliminates that civilization. The last surviving civilization wins.
+
+Helpful first commands:
+
+- `researchable`
+- `research mining`
+- `list`
+- `mycities`
+- `available`
+- `todo`
+- `map`
 
 ## Commands
 
-- `help` - show commands
-- `map` - render the full selected map
-- `status` - show current player, points, science, research, units, and selection
-- `economy` - show points, science, income, owned cities, science buildings, and border growth
-- `tech` - show unlocked, available, and locked technologies
-- `researchable` - show only techs currently available to research
-- `available` - show useful actions available this turn
-- `available city_x city_y` - show available actions for one owned city
-- `todo`, `actions`, or `advice` - show a short checklist for the current turn
-- `buildoptions x y` - show train/build/upgrade options for an owned city
-- `research tech_name` - choose the current technology to research
-- `buildscience type city_x city_y` - build an internal city science building
-- `list`, `units`, or `selectable` - list selectable current-player units and coordinates
-- `cities` or `citylist` - list all cities with owner, coordinates, income, walls, and siege status
-- `mycities` - list only the current player's cities
-- `where` - show the selected unit details
-- `inspect x y` - inspect a tile, city, unit, controller, building, and defensive bonus
-- `moves` - list legal one-step moves for the selected unit
-- `enemies` - list all visible enemy units
-- `attacks` - list enemy units in attack range and adjacent siege targets
-- `select x y` - select the current player's unit at a coordinate
-- `move north` - move selected unit one tile north
-- `move south` - move selected unit one tile south
-- `move east` - move selected unit one tile east
-- `move west` - move selected unit one tile west
-- `attack x y` - attack an enemy unit with the selected unit
-- `build type x y` - instantly build a tile building inside your borders
-- `upgrade walls city_x city_y` - build city walls
-- `train type city_x city_y` - instantly train a unit near one of your cities
-- `found city_name` - found a city with the selected settler
-- `spawn type x y` - debug-spawn a unit for the current player
-- `leaderboard` - show current conquest statistics
-- `end` - end the current player's turn
-- `quit` - exit cleanly
+Core:
 
-Aliases:
+- `help` or `h`
+- `map` or `m`
+- `status` or `s`
+- `end` or `e`
+- `quit` or `q`
 
-- `h` = `help`
-- `m` = `map`
-- `s` = `status`
-- `e` = `end`
-- `q` = `quit`
-- `eco` = `economy`
-- `techs` = `tech`
+Selection and movement:
 
-## Console Rendering
+- `list`, `units`, or `selectable`
+- `select x y`
+- `where`
+- `moves`
+- `move north`
+- `move south`
+- `move east`
+- `move west`
 
-By default, ownership is shown with ANSI colors:
+Combat:
 
-- Bright colored units and cities belong to that civilization.
-- Colored background shows city borders.
-- Dim colored building symbols show tile buildings.
-- Free cities render as neutral `F`.
+- `enemies`
+- `attacks`
+- `attack x y`
 
-Unit and city letters are unified in color mode. For example, a Warrior is always `W` and an owned city is always `C`; color identifies the owner. In `--no-color` mode, the map remains readable and keeps fallback ownership hints such as player-specific casing where available.
+Cities and economy:
 
-## Turn Guidance
+- `cities` or `citylist`
+- `mycities`
+- `economy` or `eco`
+- `available`
+- `available city_x city_y`
+- `buildoptions x y`
+- `build building_type x y`
+- `buildscience building_type city_x city_y`
+- `upgrade walls city_x city_y`
+- `train unit_type city_x city_y`
+- `found`
+- `found custom city name`
 
-Each active turn starts with a compact summary showing points gained, science gained, research progress, owned cities, cities under siege, living units, ready units, attack-ready units, and short warnings. Warnings include missing research, cities under siege, available science buildings, available walls, and trainable units.
+Science:
 
-When ending a turn, the game prints a short unresolved-actions summary and then passes to the next civilization without asking for confirmation.
+- `tech` or `techs`
+- `researchable`
+- `research tech_name`
 
-Use `available` to see current research, city actions, and unit actions. Use `available x y` or `buildoptions x y` on one of your cities to focus on trainable units, walls, science buildings, and tile building opportunities. Use `todo`, `actions`, or `advice` for a brief checklist.
+Info and helpers:
 
-## Conquest
+- `inspect x y`
+- `leaderboard`
+- `todo`, `actions`, or `advice`
 
-Conquest is the only mode. A civilization is eliminated when its capital is captured. Eliminated civilizations lose their remaining units, their non-capital cities become free cities, and their turns are skipped. The game ends when one civilization remains, then prints a leaderboard.
+Debug mode only:
 
-City capture uses a simple siege rule: if a unit ends its turn on an enemy or free city tile, the city is under siege. The defender gets one turn to respond. If the sieging unit is still alive on the city tile when the attacker’s next turn begins, the city is captured.
+- `spawn unit_type x y`
 
-Cities can only exist on plains, forests, or hills. Starting capitals and settler-founded cities are validated so they do not appear on water, mountains, or inaccessible terrain.
+## Terrain
 
-Starting capitals receive random Romanian city names from a built-in list. If a settler founds a city with no name, the game chooses an unused Romanian city name when possible:
+| Terrain | Symbol | Land units | Ships | Defense |
+| --- | --- | --- | --- | --- |
+| Water | `~` | No | Yes | +0 |
+| Plains | `.` | Yes | No | +0 |
+| Forest | `*` | Yes | No | +1 |
+| Hill | `^` | Yes | No | +1 |
+| Mountain | `M` | No | No | impassable |
 
-```text
-found
-```
-
-Custom city names still work and preserve the rest of the command line:
-
-```text
-found Alba Iulia
-```
-
-Captured cities and cities that become free keep their existing names.
-
-## Economy
-
-Points are the main currency. Each player gains points at the start of their turn from owned cities.
-
-Each city starts with:
-
-- Border radius: `1`
-- Base income: `2` points per turn
-- Border growth: `1` progress per turn
-- First border expansion requirement: `5`
-- Second border expansion requirement: `10`
-- Maximum border radius: `3`
-
-City borders use Manhattan distance. Tile buildings must be inside the current player's controlled city borders.
-
-## Science And Technology
-
-Science is separate from points. Every owned city produces `1` base science per turn, plus bonuses from internal city science buildings. Science is stored by the player, then applied to the currently selected research at the start of that player's turn. If no research is selected, science accumulates until the player chooses one.
-
-Agriculture is unlocked at the start and unlocks farms, warriors, and settlers. Other technologies must be researched:
-
-- `mining` - costs `15`, unlocks Mine, Defender, City Walls
-- `forestry` - costs `12`, unlocks Sawmill, Lumber Camp
-- `archery` - costs `12`, unlocks Archer
-- `sailing` - costs `14`, unlocks Port, Sloop
-- `writing` - costs `10`, unlocks Study Hall
-- `construction` - costs `25`, requires Mining, unlocks Catapult
-- `horseback_riding` - costs `22`, unlocks Knight
-- `shipbuilding` - costs `24`, requires Sailing, unlocks Brig
-- `education` - costs `24`, requires Writing, unlocks Campus
-- `stealth_tactics` - costs `35`, requires Archery and Horseback Riding, unlocks Assassin
-- `navigation` - costs `38`, requires Shipbuilding, unlocks Galleon and Observatory
-- `engineering` - costs `40`, requires Construction and Education, unlocks Academy
-- `administration` - costs `28`, requires Writing and Mining, adds `+1` science building slot in every city
-
-Technology names accept compact and separator forms where useful, such as `horseback riding`, `horseback_riding`, and `stealth-tactics`.
-
-## City Science Buildings
-
-Science buildings are internal city buildings. They do not appear on the map. A city has science slots based on border radius:
-
-- Radius `1`: 1 slot
-- Radius `2`: 2 slots
-- Radius `3`: 3 slots
-- Administration adds one extra slot, up to the number of implemented science buildings
-
-Science buildings:
-
-- `studyhall`, `study_hall`, or `study-hall` - costs `8`, requires Writing, gives `+2` science per turn
-- `campus` - costs `15`, requires Education, gives `+4` science per turn
-- `academy` - costs `22`, requires Engineering, gives `+6` science per turn
-- `observatory` - costs `20`, requires Navigation, gives `+5` science per turn
-
-A city cannot build the same science building twice. Free cities and enemy cities cannot build science buildings.
-
-## Tile Buildings
-
-- `farm` - costs `5`, requires Agriculture, built on plains, gives `+2` points per turn
-- `mine` - costs `7`, requires Mining, built on hills, gives `+3` points per turn
-- `port` - costs `8`, requires Sailing, built on water inside borders, gives `+3` points per turn
-- `sawmill` - costs `6`, requires Forestry, built on plains or hills, gives `+2` points per turn
-- `lumbercamp`, `lumber_camp`, or `lumber-camp` - costs `6`, requires Forestry, built on forest, gives `+3` points per turn
-
-Only one building can exist on a tile. Buildings cannot be placed on mountains or city tiles.
-
-City walls require Mining, cost `15` points, and give friendly units on that city an extra defensive bonus. Walls remain if the city is captured.
+Cities can only be founded or generated on plains, forests, or hills.
 
 ## Units
 
-Unit training costs:
+| Unit | Role | Move | Range | Unlock |
+| --- | --- | ---: | ---: | --- |
+| Warrior | Basic melee | 1 | 1 | Agriculture |
+| Archer | Ranged attacker | 1 | 2 | Archery |
+| Catapult | Long-range siege | 1 | 3 | Construction |
+| Defender | Durable garrison | 1 | 1 | Mining |
+| Settler | Founds cities | 1 | 0 | Agriculture |
+| Knight | Fast melee | 2 | 1 | Horseback Riding |
+| Assassin | High damage, can move after attacking | 2 | 1 | Stealth Tactics |
+| Sloop | Fast light ship | 3 | 2 | Sailing |
+| Brig | Balanced ship | 2 | 2 | Shipbuilding |
+| Galleon | Heavy ship | 1 | 3 | Navigation |
 
-- `warrior` - `6`
-- `archer` - `8`
-- `defender` - `8`
-- `knight` - `12`
-- `catapult` - `14`
-- `assassin` - `14`
-- `settler` - `15`
-- `sloop` - `10`
-- `brig` - `14`
-- `galleon` - `20`
+Training costs:
 
-Sloops, brigs, and galleons replace the old generic ship. They move only on water. Assassins are fragile melee units that can still move after attacking if they have movement points left.
+- Warrior 6
+- Archer 8
+- Defender 8
+- Knight 12
+- Catapult 14
+- Assassin 14
+- Settler 15
+- Sloop 10
+- Brig 14
+- Galleon 20
 
-Training requires the relevant technology. Debug `spawn` ignores technology requirements.
+Ships move only on water. Land units move on plains, forests, and hills.
 
-Settlers:
+## Buildings And Upgrades
 
-- Render as `L` for Player 1 and `l` for Player 2
-- Cannot attack
-- Move on plains, forests, and hills
-- Can found cities with `found city_name`, or use `found` to generate a Romanian city name
-- Are consumed when founding succeeds
+Tile buildings:
 
-Founding rules:
+| Building | Cost | Terrain | Unlock | Income |
+| --- | ---: | --- | --- | ---: |
+| Farm | 5 | Plains | Agriculture | +2 points |
+| Mine | 7 | Hill | Mining | +3 points |
+| Port | 8 | Water inside borders | Sailing | +3 points |
+| Sawmill | 6 | Plains or hill | Forestry | +2 points |
+| Lumber Camp | 6 | Forest | Forestry | +3 points |
 
-- The selected unit must be a living settler.
-- The settler must stand on plains, forest, or hills.
-- The tile cannot already contain a city.
-- The new city must be at least 4 Manhattan tiles away from every existing city.
+City science buildings:
 
-## Combat
+| Building | Cost | Unlock | Science |
+| --- | ---: | --- | ---: |
+| Study Hall | 8 | Writing | +2 |
+| Campus | 15 | Education | +4 |
+| Academy | 22 | Engineering | +6 |
+| Observatory | 20 | Navigation | +5 |
 
-Damage is based on attack minus half of total defense, clamped between `1` and attacker attack. Defense bonuses are simple:
+Science slots come from city border radius: radius 1 gives 1 slot, radius 2 gives 2, and radius 3 gives 3. Administration adds one extra slot, capped by the implemented science building count.
 
-- Forest: `+1`
-- Hill: `+1`
-- Own city: `+2`
-- Own walled city: additional `+2`
+City walls cost 15 points, require Mining, and give friendly units defending in that city an additional defensive bonus. Walls remain after capture.
 
-Units sieging enemy or free cities do not receive the city defense bonus.
+## Technology Tree
+
+- Agriculture: starting tech; unlocks Farm, Warrior, Settler
+- Mining: requires Agriculture; unlocks Mine, Defender, City Walls
+- Forestry: requires Agriculture; unlocks Sawmill, Lumber Camp
+- Archery: requires Agriculture; unlocks Archer
+- Sailing: requires Agriculture; unlocks Port, Sloop
+- Writing: requires Agriculture; unlocks Study Hall
+- Construction: requires Mining; unlocks Catapult
+- Horseback Riding: requires Agriculture; unlocks Knight
+- Shipbuilding: requires Sailing; unlocks Brig
+- Education: requires Writing; unlocks Campus
+- Stealth Tactics: requires Archery and Horseback Riding; unlocks Assassin
+- Navigation: requires Shipbuilding; unlocks Galleon and Observatory
+- Engineering: requires Construction and Education; unlocks Academy
+- Administration: requires Writing and Mining; adds one city science slot
+
+Technology names accept common separator forms such as `horseback riding`, `horseback_riding`, and `stealth-tactics`.
+
+## Conquest And City Capture
+
+Conquest is the only victory condition. The winner is the last non-eliminated civilization.
+
+Siege rule:
+
+- Move a unit onto an enemy or free city tile.
+- End the turn.
+- The defender gets a turn to kill or move the unit away.
+- If the unit is still alive on the city tile when the attacker’s next turn begins, the city is captured.
+
+Capital capture eliminates the old owner. Their units are removed, their non-capital cities become free cities, and their turns are skipped. Free cities can be captured by any active civilization.
+
+## Scoring
+
+The leaderboard includes all participating players. It tracks:
+
+- Cities settled
+- Cities conquered
+- Units built and lost
+- Enemy units destroyed
+- Production points generated
+- Science generated
+- Technologies researched
+- Buildings built
+- Cities lost
+- Turns survived
+
+The winner is listed first, followed by eliminated players in inverse elimination order.
 
 ## Current Limitations
 
-- Two human hotseat players only.
-- Instant training only; no production queues yet.
-- Debug spawning is still available.
-- No AI, diplomacy, fog of war, save/load, or production queues.
-- Land units cannot enter water or mountains.
-- Ships can only move on water.
-- The renderer always prints the entire selected map.
+- No AI
+- No diplomacy
+- No fog of war
+- No save/load
+- No production queues
+- No advanced graphics
+- The console renderer prints the full map
+- 5-player games reuse one of the four available colors
 
-## Planned Future Features
+## Future Plans
 
-- Production queues and richer city growth.
-- More resources and terrain types.
-- Fog of war and exploration.
-- Better map generation controls.
-- Save/load support.
-- A replaceable graphical renderer, likely raylib.
+- AI opponents
+- Raylib renderer
+- Save/load
+- Fog of war and exploration
+- More balance passes
+- Richer city growth and production queues

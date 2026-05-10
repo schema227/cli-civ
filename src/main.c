@@ -34,14 +34,13 @@ static StartupOptions parse_startup_options(int argc, char **argv)
             char *end = NULL;
             unsigned long parsed = strtoul(argv[i], &end, 10);
             if (errno != 0 || end == argv[i] || *end != '\0' || parsed > UINT_MAX) {
-                fprintf(stderr, "Unknown argument '%s'. Use an unsigned seed, --color, or --no-color.\n", argv[i]);
-                exit(EXIT_FAILURE);
+                fprintf(stderr, "Warning: ignoring unknown argument '%s'. Use an unsigned seed, --color, or --no-color.\n", argv[i]);
+                continue;
             }
             options.seed = (unsigned int)parsed;
             seed_set = 1;
         } else {
-            fprintf(stderr, "Unknown argument '%s'. Use one seed plus optional --color or --no-color.\n", argv[i]);
-            exit(EXIT_FAILURE);
+            fprintf(stderr, "Warning: ignoring extra argument '%s'. Use one seed plus optional --color or --no-color.\n", argv[i]);
         }
     }
 
@@ -89,6 +88,20 @@ static int parse_map_size(const char *text, MapSize *size)
     return 1;
 }
 
+static const char *map_size_name(MapSize size)
+{
+    if (size.width == 32) {
+        return "small";
+    }
+    if (size.width == 48) {
+        return "medium";
+    }
+    if (size.width == 96) {
+        return "xlarge";
+    }
+    return "large";
+}
+
 static MapSize prompt_map_size(void)
 {
     char input[64];
@@ -100,7 +113,7 @@ static MapSize prompt_map_size(void)
         printf("2. medium - 48x48\n");
         printf("3. large  - 64x64\n");
         printf("4. xlarge - 96x96\n\n");
-        printf("Enter map size: ");
+        printf("Enter map size [large]: ");
         fflush(stdout);
 
         if (fgets(input, sizeof(input), stdin) == NULL) {
@@ -120,16 +133,91 @@ static MapSize prompt_map_size(void)
     }
 }
 
-static void prompt_civilization_names(Game *game)
+static int parse_game_mode(const char *text, GameMode *mode)
 {
-    char input[PLAYER_NAME_LENGTH];
+    if (strcmp(text, "") == 0 || strcmp(text, "1") == 0 || strcmp(text, "standard") == 0) {
+        *mode = GAME_MODE_STANDARD;
+    } else if (strcmp(text, "2") == 0 || strcmp(text, "debug") == 0) {
+        *mode = GAME_MODE_DEBUG;
+    } else {
+        return 0;
+    }
 
-    for (int i = 0; i < PLAYER_COUNT; i++) {
-        printf("Enter name for Civilization %d: ", i + 1);
+    return 1;
+}
+
+static GameMode prompt_game_mode(void)
+{
+    char input[64];
+    GameMode mode;
+
+    for (;;) {
+        printf("\nChoose game mode:\n");
+        printf("1. standard - normal play, no debug commands\n");
+        printf("2. debug    - normal play plus spawn/test commands\n\n");
+        printf("Enter game mode [standard]: ");
         fflush(stdout);
 
         if (fgets(input, sizeof(input), stdin) == NULL) {
-            snprintf(game->players[i].name, PLAYER_NAME_LENGTH, "Player %d", i + 1);
+            return GAME_MODE_STANDARD;
+        }
+        if (strchr(input, '\n') == NULL) {
+            discard_remaining_line();
+        }
+        trim_newline(input);
+        to_lowercase(input);
+        if (parse_game_mode(input, &mode)) {
+            return mode;
+        }
+
+        printf("Invalid game mode. Enter 1, 2, standard, or debug.\n");
+    }
+}
+
+static int prompt_player_count(void)
+{
+    char input[64];
+
+    for (;;) {
+        printf("\nChoose number of human players:\n");
+        for (int i = MIN_PLAYERS; i <= MAX_PLAYERS; i++) {
+            printf("%d. %d players\n", i, i);
+        }
+        printf("Enter number of players [2]: ");
+        fflush(stdout);
+
+        if (fgets(input, sizeof(input), stdin) == NULL) {
+            return MIN_PLAYERS;
+        }
+        if (strchr(input, '\n') == NULL) {
+            discard_remaining_line();
+        }
+        trim_newline(input);
+        if (input[0] == '\0') {
+            return MIN_PLAYERS;
+        }
+
+        errno = 0;
+        char *end = NULL;
+        long parsed = strtol(input, &end, 10);
+        if (errno == 0 && end != input && *end == '\0' && parsed >= MIN_PLAYERS && parsed <= MAX_PLAYERS) {
+            return (int)parsed;
+        }
+
+        printf("Invalid player count. Enter a number from %d to %d.\n", MIN_PLAYERS, MAX_PLAYERS);
+    }
+}
+
+static void prompt_civilization_names(char names[MAX_PLAYERS][PLAYER_NAME_LENGTH], int player_count)
+{
+    char input[PLAYER_NAME_LENGTH];
+
+    for (int i = 0; i < player_count; i++) {
+        printf("Enter name for Civilization %d [Player %d]: ", i + 1, i + 1);
+        fflush(stdout);
+
+        if (fgets(input, sizeof(input), stdin) == NULL) {
+            snprintf(names[i], PLAYER_NAME_LENGTH, "Player %d", i + 1);
             continue;
         }
         if (strchr(input, '\n') == NULL) {
@@ -138,9 +226,9 @@ static void prompt_civilization_names(Game *game)
         trim_newline(input);
 
         if (input[0] == '\0') {
-            snprintf(game->players[i].name, PLAYER_NAME_LENGTH, "Player %d", i + 1);
+            snprintf(names[i], PLAYER_NAME_LENGTH, "Player %d", i + 1);
         } else {
-            snprintf(game->players[i].name, PLAYER_NAME_LENGTH, "%s", input);
+            snprintf(names[i], PLAYER_NAME_LENGTH, "%s", input);
         }
     }
 }
@@ -162,12 +250,19 @@ static void assign_civilization_colors(Game *game)
         colors[j] = temp;
     }
 
-    for (int i = 0; i < PLAYER_COUNT; i++) {
+    for (int i = 0; i < game->player_count; i++) {
         game->players[i].color = colors[i % color_count];
-        printf("%s assigned color: %s\n",
+        printf("Player %d %s assigned color: %s%s\n",
+            game->players[i].id,
             game->players[i].name,
-            civ_color_to_string(game->players[i].color));
+            civ_color_to_string(game->players[i].color),
+            i >= color_count ? " (reused)" : "");
     }
+}
+
+static const char *game_mode_to_string(GameMode mode)
+{
+    return mode == GAME_MODE_DEBUG ? "debug" : "standard";
 }
 
 int main(int argc, char **argv)
@@ -175,13 +270,25 @@ int main(int argc, char **argv)
     Game game;
     StartupOptions options = parse_startup_options(argc, argv);
     MapSize map_size = prompt_map_size();
+    GameMode mode = prompt_game_mode();
+    int player_count = prompt_player_count();
+    char names[MAX_PLAYERS][PLAYER_NAME_LENGTH];
     RenderConfig render_config = {options.use_color};
 
-    if (!game_init(&game, options.seed, map_size.width, map_size.height)) {
+    prompt_civilization_names(names, player_count);
+
+    if (!game_init(&game, options.seed, map_size.width, map_size.height, player_count, mode)) {
         fprintf(stderr, "Failed to initialize game map.\n");
         return EXIT_FAILURE;
     }
-    prompt_civilization_names(&game);
+    for (int i = 0; i < player_count; i++) {
+        snprintf(game.players[i].name, PLAYER_NAME_LENGTH, "%s", names[i]);
+    }
+
+    printf("\nSeed: %u\n", game.seed);
+    printf("Map size: %s (%dx%d)\n", map_size_name(map_size), map_size.width, map_size.height);
+    printf("Game mode: %s\n", game_mode_to_string(mode));
+    printf("Human players: %d\n", player_count);
     assign_civilization_colors(&game);
     render_console_run(&game, render_config);
     if (render_config.use_color) {

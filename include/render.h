@@ -10,6 +10,6 @@ typedef struct {
 void render_console_run(Game *game, RenderConfig config);
 void render_console_map(const Game *game, const RenderConfig *config);
 void render_console_status(const Game *game);
-void render_console_help(void);
+void render_console_help(const Game *game);
 
 #endif

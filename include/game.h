@@ -5,18 +5,27 @@
 #include "player.h"
 #include "unit.h"
 
-#define PLAYER_COUNT 2
+#define MIN_PLAYERS 2
+#define MAX_PLAYERS 5
+#define PLAYER_COUNT MAX_PLAYERS
 #define MAX_UNITS 256
 #define MAX_CITIES 64
 #define MAX_TURN_MESSAGES 16
 #define TURN_MESSAGE_LENGTH 96
 #define CITY_NAME_POOL_SIZE 100
 
+typedef enum {
+    GAME_MODE_STANDARD,
+    GAME_MODE_DEBUG
+} GameMode;
+
 typedef struct {
     Map map;
-    Player players[PLAYER_COUNT];
+    Player players[MAX_PLAYERS];
     Unit units[MAX_UNITS];
     City cities[MAX_CITIES];
+    int player_count;
+    GameMode mode;
     int unit_count;
     int city_count;
     int current_player_index;
@@ -80,7 +89,7 @@ typedef struct {
     int attacker_destroyed;
 } CombatResult;
 
-int game_init(Game *game, unsigned int seed, int map_width, int map_height);
+int game_init(Game *game, unsigned int seed, int map_width, int map_height, int player_count, GameMode mode);
 void game_free(Game *game);
 void game_start_turn(Game *game);
 void game_end_turn(Game *game);
@@ -96,6 +105,7 @@ const City *get_city_controlling_tile_const(const Game *game, int x, int y);
 int player_controls_tile(const Game *game, int owner_id, int x, int y);
 int tile_is_inside_any_city_border(const Game *game, int x, int y);
 int player_is_active(const Game *game, int player_id);
+int game_is_debug_mode(const Game *game);
 const char *get_player_name_safe(const Game *game, int player_id);
 int game_count_living_units_for_player(const Game *game, int owner_id);
 int game_count_cities_for_player(const Game *game, int owner_id);

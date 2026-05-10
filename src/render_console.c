@@ -103,6 +103,9 @@ static char city_symbol(const City *city)
     if (city->owner_id == 2) {
         return 'K';
     }
+    if (city->owner_id > 0) {
+        return 'C';
+    }
     return '?';
 }
 
@@ -136,7 +139,7 @@ static char unit_type_symbol(UnitType type)
 
 static const Player *player_for_owner(const Game *game, int owner_id)
 {
-    if (game == NULL || owner_id < 1 || owner_id > PLAYER_COUNT) {
+    if (game == NULL || owner_id < 1 || owner_id > game->player_count) {
         return NULL;
     }
 
@@ -229,11 +232,22 @@ void render_console_map(const Game *game, const RenderConfig *config)
     printf("  Units: W=Warrior A=Archer T=Catapult D=Defender N=Knight L=Settler X=Assassin P=Sloop B=Brig G=Galleon\n");
     if (config == NULL || config->use_color) {
         printf("  Color: bright unit/city=owner, colored background=city border, dim building=tile building\n");
-        for (int i = 0; i < PLAYER_COUNT; i++) {
-            printf("  %s: %s\n", game->players[i].name, civ_color_to_string(game->players[i].color));
+        for (int i = 0; i < game->player_count; i++) {
+            printf("  Player %d %s: %s%s\n",
+                game->players[i].id,
+                game->players[i].name,
+                civ_color_to_string(game->players[i].color),
+                game->players[i].is_eliminated ? " (eliminated)" : "");
         }
     } else {
         printf("  No-color mode: unit capitalization/symbol variants remain as fallback ownership hints.\n");
+        for (int i = 0; i < game->player_count; i++) {
+            printf("  Player %d %s: %s%s\n",
+                game->players[i].id,
+                game->players[i].name,
+                civ_color_to_string(game->players[i].color),
+                game->players[i].is_eliminated ? " (eliminated)" : "");
+        }
     }
     printf("  Commands: help map status economy tech available todo buildoptions list cities inspect moves enemies attacks end quit\n");
 }
@@ -289,7 +303,7 @@ void render_console_status(const Game *game)
         }
     }
 
-    for (int p = 0; p < PLAYER_COUNT; p++) {
+    for (int p = 0; p < game->player_count; p++) {
         printf("%s living units: %d\n",
             game->players[p].name,
             game_count_living_units_for_player(game, game->players[p].id));
@@ -310,42 +324,53 @@ void render_console_status(const Game *game)
         }
     }
 
-    printf("Commands: tech research name buildscience type city_x city_y economy build type x y upgrade walls city_x city_y train unit city_x city_y found name select x y move dir attack x y end quit\n");
+    printf("Commands: available todo list mycities tech research name build type x y train unit city_x city_y select x y move dir attack x y end quit\n");
 }
 
-void render_console_help(void)
+void render_console_help(const Game *game)
 {
     printf("\nCommands:\n");
-    printf("  help\n");
-    printf("  map\n");
-    printf("  status\n");
-    printf("  economy\n");
-    printf("  tech\n");
-    printf("  researchable\n");
-    printf("  available [city_x city_y]\n");
-    printf("  todo | actions | advice\n");
-    printf("  buildoptions city_x city_y\n");
+    printf("Core:\n");
+    printf("  help | h\n");
+    printf("  map | m\n");
+    printf("  status | s\n");
+    printf("  end | e\n");
+    printf("  quit | q\n");
+    printf("Selection and movement:\n");
     printf("  list | units | selectable\n");
-    printf("  cities | citylist\n");
-    printf("  mycities\n");
+    printf("  select x y\n");
     printf("  where\n");
-    printf("  inspect x y\n");
     printf("  moves\n");
+    printf("  move north|south|east|west\n");
+    printf("Combat:\n");
     printf("  enemies\n");
     printf("  attacks\n");
-    printf("  research tech_name\n");
-    printf("  buildscience studyhall|campus|academy|observatory city_x city_y\n");
-    printf("  select x y\n");
-    printf("  move north|south|east|west\n");
     printf("  attack x y\n");
+    printf("  Capture cities by holding a unit on the city tile until your next turn.\n");
+    printf("Cities and economy:\n");
+    printf("  cities | citylist\n");
+    printf("  mycities\n");
+    printf("  economy | eco\n");
+    printf("  available [city_x city_y]\n");
+    printf("  buildoptions city_x city_y\n");
     printf("  build farm|mine|port|sawmill|lumbercamp x y\n");
+    printf("  buildscience studyhall|campus|academy|observatory city_x city_y\n");
     printf("  upgrade walls city_x city_y\n");
     printf("  train warrior|archer|catapult|defender|knight|settler|assassin|sloop|brig|galleon city_x city_y\n");
-    printf("  found city_name\n");
-    printf("  spawn warrior|archer|catapult|defender|knight|settler|assassin|sloop|brig|galleon x y\n");
+    printf("  found [city_name]\n");
+    printf("Science:\n");
+    printf("  tech | techs\n");
+    printf("  researchable\n");
+    printf("  research tech_name\n");
+    printf("Info:\n");
+    printf("  inspect x y\n");
     printf("  leaderboard\n");
-    printf("  end\n");
-    printf("  quit\n");
+    printf("  todo | actions | advice\n");
+    if (game_is_debug_mode(game)) {
+        printf("Debug commands:\n");
+        printf("  spawn warrior|archer|catapult|defender|knight|settler|assassin|sloop|brig|galleon x y\n");
+    }
+    printf("Type available to see what you can do. Type list for units, cities for all cities, and mycities for your cities.\n");
     printf("Technology unlocks most units, buildings, city walls, and science buildings.\n");
 }
 
@@ -1856,7 +1881,7 @@ static int handle_command(Game *game, char *command, const RenderConfig *config)
     to_lowercase(verb);
 
     if (strcmp(verb, "help") == 0 || strcmp(verb, "h") == 0) {
-        render_console_help();
+        render_console_help(game);
     } else if (strcmp(verb, "map") == 0 || strcmp(verb, "m") == 0) {
         render_console_map(game, config);
     } else if (strcmp(verb, "status") == 0 || strcmp(verb, "s") == 0) {
@@ -1900,7 +1925,11 @@ static int handle_command(Game *game, char *command, const RenderConfig *config)
     } else if (strcmp(verb, "attack") == 0) {
         handle_attack(game, arguments);
     } else if (strcmp(verb, "spawn") == 0) {
-        handle_spawn(game, arguments);
+        if (!game_is_debug_mode(game)) {
+            printf("This command is only available in debug mode.\n");
+        } else {
+            handle_spawn(game, arguments);
+        }
     } else if (strcmp(verb, "build") == 0) {
         handle_build(game, arguments);
     } else if (strcmp(verb, "train") == 0) {
@@ -1936,8 +1965,7 @@ void render_console_run(Game *game, RenderConfig config)
     char command[COMMAND_BUFFER_SIZE];
     int running = 1;
 
-    printf("Seed: %u\n", game->seed);
-    render_console_help();
+    render_console_help(game);
     render_console_map(game, &config);
     game_start_turn(game);
     print_turn_banner(game);
